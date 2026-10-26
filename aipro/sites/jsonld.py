@@ -37,7 +37,7 @@ def parse_product_offer(html: str) -> PriceResult:
             except ValueError:
                 continue
             if lo != hi:
-                raise FetchError("parse", "عدة أسعار مختلفة في الصفحة — تحتاج مراجعة")
+                raise FetchError("parse", f"عدة أسعار مختلفة في الصفحة (من {lo} إلى {hi} {n['priceCurrency']}) — تحتاج مراجعة")
             prices.add((lo, str(n["priceCurrency"]).upper()))
     if len(prices) != 1:
         raise FetchError("parse", "لم يُعثر على سعر واضح في بيانات المنتج" if not prices
