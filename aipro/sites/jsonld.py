@@ -17,7 +17,7 @@ def _walk(node):
             yield from _walk(v)
 
 
-def parse_product_offer(html: str) -> PriceResult:
+def parse_product_offer(html: str, use_low: bool = False) -> PriceResult:
     """Read schema.org Product offers. Raises FetchError(parse|currency) if ambiguous."""
     prices = set()
     for m in _LD.finditer(html):
@@ -36,6 +36,8 @@ def parse_product_offer(html: str) -> PriceResult:
                 lo, hi = normalize_number(str(raw)), normalize_number(str(hi))
             except ValueError:
                 continue
+            if use_low:
+                hi = lo                      # AggregateOffer: cheapest listed offer
             if lo != hi:
                 raise FetchError("parse", f"عدة أسعار مختلفة في الصفحة (من {lo} إلى {hi} {n['priceCurrency']}) — تحتاج مراجعة")
             prices.add((lo, str(n["priceCurrency"]).upper()))

@@ -18,6 +18,8 @@ def to_egp(price: Decimal, currency: str, fx) -> Decimal | None:
         return price
     if currency == "USD" and fx is not None:
         return price * fx.rate
+    if currency == "EUR" and fx is not None and fx.eur:
+        return price * fx.eur
     return None
 
 
@@ -28,8 +30,8 @@ def price_line(product, st, fx, tz: str) -> str:
         return f"• <b>{name}</b>: غير متاح — لا توجد قراءة ناجحة بعد"
     price = Decimal(st["price"])
     line = f"• <b>{name}</b>: {fmt_amount(price, st['currency'])}"
-    if st["currency"] == "USD":
-        egp = to_egp(price, "USD", fx)
+    if st["currency"] != "EGP":
+        egp = to_egp(price, st["currency"], fx)
         line += f" ≈ {fmt_amount(egp, 'EGP')} (تقريبي)" if egp is not None else " (المقابل بالجنيه غير متاح حاليًا)"
     line += f"\n   آخر تحديث ناجح: {when(st['last_ok_ts'], tz)}"
     if st["status"] != "ok" and st["last_error"]:
@@ -41,7 +43,8 @@ def price_line(product, st, fx, tz: str) -> str:
 def fx_footer(fx, tz: str) -> str:
     if fx is None:
         return "سعر الصرف: غير متاح حاليًا (تعذّر التحويل إلى الجنيه)"
-    return (f"سعر الصرف المستخدم: \u200e1 USD = {fx.rate:.4f} EGP\u200e\n"
+    eur = f" | \u200e1 EUR = {fx.eur:.4f} EGP\u200e" if fx.eur else ""
+    return (f"سعر الصرف المستخدم: \u200e1 USD = {fx.rate:.4f} EGP\u200e{eur}\n"
             f"المصدر: \u200e{fx.source}\u200e — تحديث المصدر: \u200e{when(fx.source_ts or fx.fetched_ts, tz)}\u200e")
 
 
@@ -59,7 +62,7 @@ def change_report(product, old, new, cur, fx, ts, products, states, tz) -> str:
            f"السعر الجديد: {fmt_amount(new, cur)}",
            f"التغير: {word} {fmt_amount(abs(diff), cur)}",
            f"نسبة التغير: {pct:+.2f}%"]
-    if cur == "USD":
+    if cur != "EGP":
         o, n = to_egp(old, cur, fx), to_egp(new, cur, fx)
         out.append(f"المقابل التقريبي بالجنيه: {fmt_amount(n, 'EGP')} (كان {fmt_amount(o, 'EGP')})"
                    if fx else "المقابل التقريبي بالجنيه: غير متاح حاليًا")
@@ -73,6 +76,8 @@ def alert_text(product, price, cur, egp, threshold, fx, ts, link, tz, reminder_n
     out = [head, f"الموقع: <b>{escape(product.name)}</b>", f"السعر الحالي: {fmt_amount(price, cur)}"]
     if cur != "EGP":
         out.append(f"المقابل التقريبي بالجنيه: {fmt_amount(egp, 'EGP')}")
+        if product.id == "driffle":
+            out.append("السعر الظاهر لموقع الخادم (أرخص عرض)، قد يختلف في مصر")
         out.append(fx_footer(fx, tz))
     out += [f"الحد المستهدف: أقل من {fmt_amount(threshold, 'EGP')}"]
     if cur == "EGP":

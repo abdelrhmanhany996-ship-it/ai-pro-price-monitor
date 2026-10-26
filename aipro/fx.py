@@ -16,6 +16,7 @@ class Rate:
     source: str
     source_ts: int | None
     fetched_ts: int
+    eur: Decimal | None = None      # EUR -> EGP
 
 
 def fetch_rate(now: int) -> Rate:
@@ -27,7 +28,10 @@ def fetch_rate(now: int) -> Rate:
     rate = Decimal(str(d["rates"]["EGP"]))
     if rate <= 0:
         raise ValueError("invalid fx rate")
-    return Rate(rate, "open.er-api.com", d.get("time_last_update_unix"), now)
+    eur = None
+    if d["rates"].get("EUR"):
+        eur = rate / Decimal(str(d["rates"]["EUR"]))
+    return Rate(rate, "open.er-api.com", d.get("time_last_update_unix"), now, eur)
 
 
 def save(db: DB, r: Rate) -> None:
@@ -35,6 +39,7 @@ def save(db: DB, r: Rate) -> None:
          "ON CONFLICT(id) DO UPDATE SET rate=excluded.rate,source=excluded.source,"
          "source_ts=excluded.source_ts,fetched_ts=excluded.fetched_ts",
          (str(r.rate), r.source, r.source_ts, r.fetched_ts))
+    db.set("fx_eur", r.eur if r.eur else "")
 
 
 def current(db: DB, now: int, max_age: int) -> Rate | None:
@@ -45,4 +50,6 @@ def current(db: DB, now: int, max_age: int) -> Rate | None:
     ts = row["source_ts"] or row["fetched_ts"]
     if now - ts > max_age:
         return None
-    return Rate(Decimal(row["rate"]), row["source"], row["source_ts"], row["fetched_ts"])
+    eur = db.get("fx_eur")
+    return Rate(Decimal(row["rate"]), row["source"], row["source_ts"], row["fetched_ts"],
+                Decimal(eur) if eur else None)

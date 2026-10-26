@@ -17,5 +17,5 @@ class Product:
 PRODUCTS: dict[str, Product] = {p.id: p for p in (
     Product("maads", "MAADS", maads.URL, "EGP", maads.fetch),
     Product("z2u", "Z2U", z2u.URL, "USD", z2u.fetch),
-    Product("driffle", "Driffle", driffle.URL, "EGP", driffle.fetch),
+    Product("driffle", "Driffle", driffle.URL, driffle.CURRENCY, driffle.fetch),
 )}

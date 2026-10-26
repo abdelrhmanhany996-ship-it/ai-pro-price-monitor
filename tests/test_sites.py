@@ -52,5 +52,12 @@ def test_driffle_block_page_is_blocked_not_zero():
     assert e.value.kind == "blocked"
 
 
-def test_driffle_jsonld_egp():
-    assert str(driffle.parse(ld(188)).price) == "188"
+def test_driffle_cheapest_eur_offer():
+    r = driffle.parse(ld(7.68, "EUR", low=6.48))
+    assert (str(r.price), r.currency) == ("6.48", "EUR")
+
+
+def test_driffle_non_eur_needs_review():
+    with pytest.raises(FetchError) as e:
+        driffle.parse(ld(188, "EGP"))
+    assert e.value.kind == "currency"
