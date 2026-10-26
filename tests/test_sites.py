@@ -61,3 +61,19 @@ def test_driffle_non_eur_needs_review():
     with pytest.raises(FetchError) as e:
         driffle.parse(ld(188, "EGP"))
     assert e.value.kind == "currency"
+
+
+def test_driffle_picks_own_product_among_several_blocks():
+    other = ('<script type="application/ld+json">{"@type":"Product","url":"https://x.test/other-p111",'
+             '"offers":{"priceCurrency":"EUR","price":99}}</script>')
+    mine = ('<script type="application/ld+json">{"@type":"Product","url":"https://x.test/google-p9998937",'
+            '"offers":{"@type":"AggregateOffer","priceCurrency":"EUR","lowPrice":6.48,"highPrice":7.68}}</script>')
+    assert str(driffle.parse(other + mine).price) == "6.48"
+
+
+def test_driffle_still_ambiguous_is_not_guessed():
+    a = '<script type="application/ld+json">{"@type":"Product","offers":{"priceCurrency":"EUR","price":5}}</script>'
+    b = '<script type="application/ld+json">{"@type":"Product","offers":{"priceCurrency":"EUR","price":6}}</script>'
+    with pytest.raises(FetchError) as e:
+        driffle.parse(a + b)
+    assert "5" in str(e.value) and "6" in str(e.value)
