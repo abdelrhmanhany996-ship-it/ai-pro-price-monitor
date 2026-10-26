@@ -160,6 +160,9 @@ class Engine:
                 if self.outbox.enqueue(f"remind:{cyc['id']}:{k}", "reminder", text,
                                        self.buttons(pid, cyc["id"]), now=now):
                     n += 1
+                    # companion message right after the reminder: full prices table
+                    self.outbox.enqueue(f"remind-table:{cyc['id']}:{k}", "reminder-table",
+                                        self.prices_text(now), now=now)
                 self.db.x("UPDATE alert_cycles SET reminders_sent=?,last_reminder_ts=? WHERE id=?",
                           (k, now, cyc["id"]))
         return n

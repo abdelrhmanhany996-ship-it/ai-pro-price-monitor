@@ -1,6 +1,6 @@
 # نظام مراقبة أسعار Google AI Pro (18 شهر) + تنبيهات Telegram
 
-يراقب MAADS وZ2U وDriffle، ويرسل: تنبيه «أقل من 200 جنيه» مع تذكير كل 10 دقائق حتى الضغط على رابط التتبع، تقارير تغيّر الأسعار، تقريرًا يوميًا، وأوامر `/start /status /pause /resume /prices /help`.
+يراقب MAADS وZ2U وDriffle، ويرسل: تنبيه «أقل من 200 جنيه» مع تذكير كل ساعة (قابل للتعديل) تتبعه رسالة بجدول الأسعار حتى الضغط على رابط التتبع، تقارير تغيّر الأسعار، تقريرًا يوميًا، وأوامر `/start /status /pause /resume /prices /help`.
 بايثون 3.11+ بدون أي مكتبات خارجية. قاعدة البيانات SQLite.
 
 ## حالة المواقع (تم فحصها فعليًا في 2026-10-26)
@@ -23,7 +23,7 @@
 ```bash
 cp .env.example .env && chmod 600 .env    # املأ TELEGRAM_BOT_TOKEN و TELEGRAM_CHAT_ID
 ```
-كل الإعدادات في `.env` (مدة الفحص `CHECK_INTERVAL_SECONDS=300`، التذكير `REMINDER_INTERVAL_SECONDS=600`، الحد `THRESHOLD_EGP=200`، وقت التقرير اليومي `DAILY_REPORT_TIME`…). `.env` مستثنى من Git، والتوكن لا يظهر في السجلات (يُحجب تلقائيًا).
+كل الإعدادات في `.env` (مدة الفحص `CHECK_INTERVAL_SECONDS=300`، التذكير `REMINDER_INTERVAL_SECONDS=3600`، الحد `THRESHOLD_EGP=200`، وقت التقرير اليومي `DAILY_REPORT_TIME`…). `.env` مستثنى من Git، والتوكن لا يظهر في السجلات (يُحجب تلقائيًا).
 
 ## 3) التشغيل محليًا
 ```bash

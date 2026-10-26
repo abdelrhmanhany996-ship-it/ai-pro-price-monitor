@@ -29,7 +29,7 @@ def make_products():
 
 @pytest.fixture
 def cfg():
-    return Settings(chat_id="42", token="t", confirm_checks=1, error_alert_after=3, track_base_url="https://trk.test")
+    return Settings(chat_id="42", token="t", confirm_checks=1, reminder_interval=600, error_alert_after=3, track_base_url="https://trk.test")
 
 
 @pytest.fixture

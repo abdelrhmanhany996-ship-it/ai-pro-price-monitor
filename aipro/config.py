@@ -27,7 +27,7 @@ class Settings:
     web_host: str = "127.0.0.1"
     web_port: int = 8080
     check_interval: int = 300
-    reminder_interval: int = 600
+    reminder_interval: int = 3600
     threshold_egp: Decimal = Decimal("200")
     confirm_checks: int = 2
     error_alert_after: int = 3
@@ -54,7 +54,7 @@ def load() -> Settings:
         web_host=g("WEB_HOST", "127.0.0.1"),
         web_port=int(g("WEB_PORT", "8080")),
         check_interval=int(g("CHECK_INTERVAL_SECONDS", "300")),
-        reminder_interval=int(g("REMINDER_INTERVAL_SECONDS", "600")),
+        reminder_interval=int(g("REMINDER_INTERVAL_SECONDS", "3600")),
         threshold_egp=Decimal(g("THRESHOLD_EGP", "200")),
         confirm_checks=max(1, int(g("CONFIRM_CHECKS", "2"))),
         error_alert_after=max(1, int(g("ERROR_ALERT_AFTER", "3"))),

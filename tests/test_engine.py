@@ -318,3 +318,19 @@ def test_status_text_lists_alerts_errors_and_state(env):
     assert "HTTP 403" in t
     env.set_paused(True, T0 + 11)
     assert "متوقفة" in env.status_text(T0 + 12)
+
+
+def test_default_reminder_is_hourly():
+    from aipro.config import Settings
+    assert Settings().reminder_interval == 3600
+
+
+def test_each_reminder_is_followed_by_a_prices_table(env):
+    feed(env, "maads", 199)
+    feed(env, "maads", 199, now=T0 + 10 * M)
+    assert env.due_reminders(T0 + 10 * M) == 1
+    rows = msgs(env)
+    kinds = [r["kind"] for r in rows]
+    assert kinds[-2:] == ["reminder", "reminder-table"]
+    assert "Site" in rows[-1]["text"] and "MAADS" in rows[-1]["text"] and "199 EGP" in rows[-1]["text"]
+    assert env.due_reminders(T0 + 10 * M) == 0 and len(msgs(env, "reminder-table")) == 1
