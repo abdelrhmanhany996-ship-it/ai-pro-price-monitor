@@ -41,8 +41,8 @@ def price_line(product, st, fx, tz: str) -> str:
 def fx_footer(fx, tz: str) -> str:
     if fx is None:
         return "سعر الصرف: غير متاح حاليًا (تعذّر التحويل إلى الجنيه)"
-    return (f"سعر الصرف المستخدم: 1 USD = {fx.rate:.4f} EGP ({fx.source}، "
-            f"تحديث المصدر: {when(fx.source_ts or fx.fetched_ts, tz)})")
+    return (f"سعر الصرف المستخدم: \u200e1 USD = {fx.rate:.4f} EGP\u200e\n"
+            f"المصدر: \u200e{fx.source}\u200e — تحديث المصدر: \u200e{when(fx.source_ts or fx.fetched_ts, tz)}\u200e")
 
 
 def prices_table(products, states, fx, tz: str) -> str:
