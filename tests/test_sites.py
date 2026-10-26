@@ -52,28 +52,27 @@ def test_driffle_block_page_is_blocked_not_zero():
     assert e.value.kind == "blocked"
 
 
-def test_driffle_cheapest_eur_offer():
+def test_driffle_cheapest_offer_any_supported_currency():
     r = driffle.parse(ld(7.68, "EUR", low=6.48))
     assert (str(r.price), r.currency) == ("6.48", "EUR")
+    assert driffle.parse(ld(5, "USD")).currency == "USD"
 
 
-def test_driffle_non_eur_needs_review():
+def test_driffle_unsupported_currency_needs_review():
     with pytest.raises(FetchError) as e:
-        driffle.parse(ld(188, "EGP"))
+        driffle.parse(ld(188, "BRL"))
     assert e.value.kind == "currency"
 
 
-def test_driffle_picks_own_product_among_several_blocks():
-    other = ('<script type="application/ld+json">{"@type":"Product","url":"https://x.test/other-p111",'
-             '"offers":{"priceCurrency":"EUR","price":99}}</script>')
-    mine = ('<script type="application/ld+json">{"@type":"Product","url":"https://x.test/google-p9998937",'
-            '"offers":{"@type":"AggregateOffer","priceCurrency":"EUR","lowPrice":6.48,"highPrice":7.68}}</script>')
-    assert str(driffle.parse(other + mine).price) == "6.48"
+def test_driffle_takes_cheapest_across_blocks():
+    def blk(p):
+        return ('<script type="application/ld+json">{"@type":"Product","offers":'
+                f'{{"priceCurrency":"EUR","price":{p}}}}}</script>')
+    assert str(driffle.parse(blk(6.55) + blk(6.03) + blk(6.48)).price) == "6.03"
 
 
-def test_driffle_still_ambiguous_is_not_guessed():
-    a = '<script type="application/ld+json">{"@type":"Product","offers":{"priceCurrency":"EUR","price":5}}</script>'
-    b = '<script type="application/ld+json">{"@type":"Product","offers":{"priceCurrency":"EUR","price":6}}</script>'
-    with pytest.raises(FetchError) as e:
-        driffle.parse(a + b)
-    assert "5" in str(e.value) and "6" in str(e.value)
+def test_driffle_mixed_currencies_not_guessed():
+    mix = ('<script type="application/ld+json">{"@type":"Product","offers":{"priceCurrency":"EUR","price":6}}</script>'
+           '<script type="application/ld+json">{"@type":"Product","offers":{"priceCurrency":"USD","price":7}}</script>')
+    with pytest.raises(FetchError):
+        driffle.parse(mix)

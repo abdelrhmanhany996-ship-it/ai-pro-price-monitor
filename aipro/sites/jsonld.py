@@ -37,7 +37,8 @@ def _offers(node, use_low):
     return out
 
 
-def parse_product_offer(html: str, use_low: bool = False, url_hint: str | None = None) -> PriceResult:
+def parse_product_offer(html: str, use_low: bool = False, url_hint: str | None = None,
+                        pick_min: bool = False) -> PriceResult:
     """Read schema.org Product offers. With several Product blocks, url_hint picks the page's own.
     Raises FetchError(parse) if the price is still ambiguous — never guesses."""
     blocks = []
@@ -53,6 +54,8 @@ def parse_product_offer(html: str, use_low: bool = False, url_hint: str | None =
     prices = set()
     for b in blocks:
         prices |= _offers(b, use_low)
+    if pick_min and prices and len({c for _, c in prices}) == 1:
+        prices = {min(prices)}                 # cheapest offer on the page (same currency only)
     if len(prices) != 1:
         found = ", ".join(f"{p} {c}" for p, c in sorted(prices)[:6])
         raise FetchError("parse", "لم يُعثر على سعر واضح في بيانات المنتج" if not prices

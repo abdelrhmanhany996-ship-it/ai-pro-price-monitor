@@ -42,3 +42,20 @@ def test_eur_change_report_shows_original_and_egp(eng):
     feed(eng, "driffle", "6.50", now=T0 + 1)
     t = msgs(eng, "change")[0]["text"]
     assert "6.50 EUR" in t and "358" in t and "1 EUR = 55.00" in t
+
+
+def test_any_currency_product_switching_currency_is_baseline_not_change(cfg, tmp_path):
+    prods = {"driffle": Product("driffle", "Driffle", "https://example.test/d", "ANY", lambda: None)}
+    db = DB(str(tmp_path / "a.db"))
+    e = Engine(cfg, db, prods, Outbox(db))
+    fxmod.save(db, fxmod.Rate(Decimal("50"), "t", T0, T0, Decimal("55")))
+    feed(e, "driffle", "6.03", cur="EUR")
+    feed(e, "driffle", "300", cur="EGP", now=T0 + 1)
+    assert msgs(e, "change") == [] and e.state("driffle")["currency"] == "EGP"
+    feed(e, "driffle", "290", cur="EGP", now=T0 + 2)
+    assert len(msgs(e, "change")) == 1
+
+
+def test_driffle_eur_price_shown_with_egp_equivalent(eng):
+    feed(eng, "driffle", "6.03")
+    assert "6.03 EUR" in eng.prices_text(T0) and "332" in eng.prices_text(T0)   # 6.03*55

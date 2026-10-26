@@ -71,7 +71,7 @@ class Engine:
 
     def record_success(self, pid: str, res: PriceResult, now: int) -> None:
         p = self.products[pid]
-        if res.currency != p.currency or res.price <= 0:
+        if (p.currency != "ANY" and res.currency != p.currency) or res.price <= 0:
             return self.record_failure(pid, FetchError("currency", f"العملة {res.currency} غير متوقعة"), now)
         price = res.price
         with self.db.tx():
@@ -86,7 +86,7 @@ class Engine:
             self.db.x("UPDATE product_state SET consecutive_failures=0,outage_id=NULL,status='ok',"
                       "last_error=NULL,last_ok_ts=? WHERE product_id=?", (now, pid))
             old = Decimal(st["price"]) if st["price"] is not None else None
-            if old is None:                                   # first reading = baseline, no report
+            if old is None or st["currency"] != res.currency:   # first reading / currency switch = baseline
                 self._accept(pid, price, res.currency, now)
             elif old == price:
                 self.db.x("UPDATE product_state SET pending_price=NULL,pending_count=0 WHERE product_id=?", (pid,))
