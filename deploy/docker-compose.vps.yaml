@@ -1,0 +1,14 @@
+# Hostinger VPS Docker Manager: builds straight from GitHub. Secrets come from the project's environment.
+services:
+  aipro:
+    build: https://github.com/abdelrhmanhany996-ship-it/ai-pro-price-monitor.git#main
+    restart: unless-stopped
+    environment:
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      TZ: Africa/Cairo
+      TIMEZONE: Africa/Cairo
+    volumes:
+      - aipro_data:/app/data
+volumes:
+  aipro_data:
