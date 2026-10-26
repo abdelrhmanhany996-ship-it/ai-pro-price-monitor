@@ -1,4 +1,4 @@
-"""Arabic message builders (HTML parse mode). Pure functions over plain data."""
+"""Arabic message builders (HTML parse mode). Prices are shown as compact monospace tables."""
 from datetime import datetime
 from decimal import Decimal
 from html import escape
@@ -6,11 +6,17 @@ from zoneinfo import ZoneInfo
 
 from .money import fmt_amount
 
-PAUSE_BANNER = "⏸ <b>المراقبة متوقفة مؤقتًا</b> (/resume للاستئناف)\n"
+LRM = "‎"
+PAUSE_BANNER = "⏸ <b>المراقبة متوقفة مؤقتًا</b> — /resume للاستئناف\n"
 
 
-def when(ts: int | None, tz: str) -> str:
-    return datetime.fromtimestamp(ts, ZoneInfo(tz)).strftime("%Y-%m-%d %H:%M") if ts else "—"
+def when(ts: int | None, tz: str, short: bool = False) -> str:
+    if not ts:
+        return "—"
+    dt = datetime.fromtimestamp(ts, ZoneInfo(tz))
+    if short:
+        return dt.strftime("%H:%M") if dt.date() == datetime.now(ZoneInfo(tz)).date() else dt.strftime("%m-%d %H:%M")
+    return dt.strftime("%Y-%m-%d %H:%M")
 
 
 def to_egp(price: Decimal, currency: str, fx) -> Decimal | None:
@@ -23,78 +29,88 @@ def to_egp(price: Decimal, currency: str, fx) -> Decimal | None:
     return None
 
 
-def price_line(product, st, fx, tz: str) -> str:
-    """One product line for tables/status. Never invents a value."""
-    name = escape(product.name)
-    if st is None or st["price"] is None:
-        return f"• <b>{name}</b>: غير متاح — لا توجد قراءة ناجحة بعد"
-    price = Decimal(st["price"])
-    line = f"• <b>{name}</b>: {fmt_amount(price, st['currency'])}"
-    if st["currency"] != "EGP":
-        egp = to_egp(price, st["currency"], fx)
-        line += f" ≈ {fmt_amount(egp, 'EGP')} (تقريبي)" if egp is not None else " (المقابل بالجنيه غير متاح حاليًا)"
-    line += f"\n   آخر تحديث ناجح: {when(st['last_ok_ts'], tz)}"
-    if st["status"] != "ok" and st["last_error"]:
-        label = "تحتاج مراجعة" if st["status"] == "review" else "فشل الفحص"
-        line += f"\n   ⚠️ {label}: {escape(st['last_error'])} — السعر أعلاه هو آخر سعر معروف"
-    return line
-
-
 def fx_footer(fx, tz: str) -> str:
     if fx is None:
-        return "سعر الصرف: غير متاح حاليًا (تعذّر التحويل إلى الجنيه)"
-    eur = f" | \u200e1 EUR = {fx.eur:.4f} EGP\u200e" if fx.eur else ""
-    return (f"سعر الصرف المستخدم: \u200e1 USD = {fx.rate:.4f} EGP\u200e{eur}\n"
-            f"المصدر: \u200e{fx.source}\u200e — تحديث المصدر: \u200e{when(fx.source_ts or fx.fetched_ts, tz)}\u200e")
+        return "💱 سعر الصرف غير متاح حاليًا"
+    eur = f"  {LRM}1 EUR = {fx.eur:.2f}" if fx.eur else ""
+    return f"💱 {LRM}1 USD = {fx.rate:.2f}{eur} EGP{LRM} · {when(fx.source_ts or fx.fetched_ts, tz, True)}"
 
 
-def prices_table(products, states, fx, tz: str) -> str:
-    lines = [price_line(p, states.get(p.id), fx, tz) for p in products]
-    return "\n".join(lines) + "\n" + fx_footer(fx, tz)
+def _table(headers, rows, marks=None) -> str:
+    """Monospace table (Latin text only, so columns stay aligned). marks = one emoji per row."""
+    widths = [max(len(str(c)) for c in col) for col in zip(headers, *rows)]
+    fmt = lambda r: "  ".join(str(c).ljust(w) for c, w in zip(r, widths)).rstrip()  # noqa: E731
+    lines = [("   " if marks else "") + fmt(headers)]
+    for i, r in enumerate(rows):
+        lines.append((f"{marks[i]} " if marks else "") + fmt(r))
+    return "<pre>" + escape("\n".join(lines)) + "</pre>"
 
 
-def change_report(product, old, new, cur, fx, ts, products, states, tz) -> str:
+def _row_state(product, st, fx, threshold: Decimal):
+    """(mark, price_text, egp_text, updated_text) — never invents a value."""
+    if st is None or st["price"] is None:
+        return "🔴", "—", "—", "—"
+    price = Decimal(st["price"])
+    egp = to_egp(price, st["currency"], fx)
+    mark = "🔴" if st["status"] != "ok" else ("🟢" if egp is not None and egp < threshold else "⚪")
+    return mark, fmt_amount(price, st["currency"]), f"{egp:,.0f}" if egp is not None else "n/a", ""
+
+
+def prices_table(products, states, fx, tz: str, threshold: Decimal = Decimal("200")) -> str:
+    rows, marks, problems = [], [], False
+    for p in products:
+        st = states.get(p.id)
+        mark, price, egp, _ = _row_state(p, st, fx, threshold)
+        upd = when(st["last_ok_ts"], tz, True) if st is not None and st["price"] is not None else "—"
+        rows.append([p.name, price, egp, upd])
+        marks.append(mark)
+        problems |= mark == "🔴"
+    out = _table(["Site", "Price", "EGP", "Updated"], rows, marks)
+    legend = f"🟢 أقل من {threshold:f} جنيه · ⚪ عادي" + (" · 🔴 فشل الفحص/لا بيانات (آخر سعر معروف)" if problems else "")
+    return f"{out}\n{legend}\n{fx_footer(fx, tz)}"
+
+
+def change_report(product, old, new, cur, fx, ts, products, states, tz, threshold=Decimal("200")) -> str:
     diff, pct = new - old, (new - old) / old * 100
-    word = "ارتفاع" if diff > 0 else "انخفاض"
-    out = [f"📊 <b>تقرير تغيّر الأسعار</b>",
-           f"المنتج: <b>{escape(product.name)}</b>",
-           f"السعر السابق: {fmt_amount(old, cur)}",
-           f"السعر الجديد: {fmt_amount(new, cur)}",
-           f"التغير: {word} {fmt_amount(abs(diff), cur)}",
-           f"نسبة التغير: {pct:+.2f}%"]
-    if cur != "EGP":
-        o, n = to_egp(old, cur, fx), to_egp(new, cur, fx)
-        out.append(f"المقابل التقريبي بالجنيه: {fmt_amount(n, 'EGP')} (كان {fmt_amount(o, 'EGP')})"
-                   if fx else "المقابل التقريبي بالجنيه: غير متاح حاليًا")
-    out += ["", "<b>آخر الأسعار:</b>", prices_table(products, states, fx, tz), "",
-            f"وقت اكتشاف التغيير: {when(ts, tz)}"]
-    return "\n".join(out)
+    arrow = "🔺" if diff > 0 else "🔻"
+    rows = [["Was", fmt_amount(old, cur), _egp_txt(old, cur, fx)],
+            ["Now", fmt_amount(new, cur), _egp_txt(new, cur, fx)],
+            ["Diff", f"{diff:+.2f} {cur}", f"{pct:+.2f}%"]]
+    return "\n".join([f"{arrow} <b>تغيّر سعر {escape(product.name)}</b>",
+                      _table(["", "Price", "EGP / %"], rows), "",
+                      prices_table(products, states, fx, tz, threshold), f"🕒 {when(ts, tz)}"])
+
+
+def _egp_txt(price, cur, fx) -> str:
+    e = to_egp(price, cur, fx)
+    return f"{e:,.0f}" if e is not None else "n/a"
 
 
 def alert_text(product, price, cur, egp, threshold, fx, ts, link, tz, reminder_n=0) -> str:
-    head = "🚨 <b>فرصة سعرية جديدة!</b>" if not reminder_n else f"⏰ <b>تذكير #{reminder_n}: السعر ما زال أقل من الحد</b>"
-    out = [head, f"الموقع: <b>{escape(product.name)}</b>", f"السعر الحالي: {fmt_amount(price, cur)}"]
+    head = ("🚨 <b>فرصة سعرية جديدة!</b>" if not reminder_n
+            else f"⏰ <b>تذكير #{reminder_n} — السعر ما زال أقل من الحد</b>")
+    line = fmt_amount(price, cur) + (f"  ≈  {egp:,.0f} EGP" if cur != "EGP" else "")
+    parts = [head, f"<b>{escape(product.name)}</b>", f"<pre>{escape(line)}</pre>",
+             f"الحد: أقل من {threshold:f} جنيه"]
     if cur != "EGP":
-        out.append(f"المقابل التقريبي بالجنيه: {fmt_amount(egp, 'EGP')}")
-        if product.id == "driffle":
-            out.append("السعر الظاهر لموقع الخادم (أرخص عرض)، قد يختلف في مصر")
-        out.append(fx_footer(fx, tz))
-    out += [f"الحد المستهدف: أقل من {fmt_amount(threshold, 'EGP')}"]
-    if cur == "EGP":
-        pass
-    out += [f'<a href="{escape(link, quote=True)}">افتح المنتج</a>',
-            f"وقت اكتشاف السعر: {when(ts, tz)}"]
-    return "\n".join(out)
+        parts.append(fx_footer(fx, tz))
+    parts += [f'🔗 <a href="{escape(link, quote=True)}">افتح المنتج</a>', f"🕒 {when(ts, tz)}"]
+    return "\n".join(parts)
 
 
 def error_text(product, st, tz: str) -> str:
-    last = (f"آخر سعر معروف: {fmt_amount(Decimal(st['price']), st['currency'])} "
-            f"(تحديث: {when(st['last_ok_ts'], tz)})") if st["price"] else "لا يوجد سعر معروف سابق"
+    last = (f"آخر سعر معروف: {fmt_amount(Decimal(st['price']), st['currency'])} ({when(st['last_ok_ts'], tz, True)})"
+            if st["price"] else "لا يوجد سعر معروف سابق")
     return "\n".join([f"⚠️ <b>تعذّر فحص {escape(product.name)}</b>",
                       f"السبب: {escape(st['last_error'] or '—')}",
-                      f"عدد الفحوصات الفاشلة المتتالية: {st['consecutive_failures']}",
-                      last, "لن تُرسل تنبيهات سعر لهذا المنتج حتى ينجح الفحص."])
+                      f"فشل متتالٍ: {st['consecutive_failures']} · {last}",
+                      "لا تنبيهات سعر لهذا المنتج حتى ينجح الفحص."])
 
 
 def recovered_text(product, st, tz: str) -> str:
-    return f"✅ عاد فحص <b>{escape(product.name)}</b> للعمل. السعر الحالي: {fmt_amount(Decimal(st['price']), st['currency'])}"
+    return f"✅ عاد فحص <b>{escape(product.name)}</b> — {fmt_amount(Decimal(st['price']), st['currency'])}"
+
+
+def daily_table(rows) -> str:
+    """rows: [name, price, egp, min, max, changes, fails, mark]"""
+    return _table(["Site", "Now", "EGP", "Min", "Max", "Chg", "Fail"], [r[:7] for r in rows], [r[7] for r in rows])

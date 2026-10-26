@@ -34,11 +34,11 @@ def test_eur_exactly_200_or_more_no_alert(eng):
 def test_eur_without_rate_not_judged_and_shown_as_unavailable(eng):
     eng.db.set("fx_eur", "")
     feed(eng, "driffle", "1.00")
-    assert msgs(eng, "alert") == [] and "غير متاح" in eng.prices_text(T0)
+    assert msgs(eng, "alert") == [] and "n/a" in eng.prices_text(T0)
 
 
 def test_eur_change_report_shows_original_and_egp(eng):
     feed(eng, "driffle", "7.00")
     feed(eng, "driffle", "6.50", now=T0 + 1)
     t = msgs(eng, "change")[0]["text"]
-    assert "6.50 EUR" in t and "357.50 EGP" in t and "1 EUR = 55.0000 EGP" in t
+    assert "6.50 EUR" in t and "358" in t and "1 EUR = 55.00" in t

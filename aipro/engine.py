@@ -110,7 +110,7 @@ class Engine:
         cid = self.db.x("INSERT INTO price_changes(product_id,ts,old_price,new_price,currency) VALUES(?,?,?,?,?)",
                         (pid, now, str(old), str(price), cur)).lastrowid
         text = M.change_report(self.products[pid], old, price, cur, self.fx(now), now,
-                               list(self.products.values()), self.states(), self.tz)
+                               list(self.products.values()), self.states(), self.tz, self.cfg.threshold_egp)
         self.outbox.enqueue(f"change:{cid}", "change", text, now=now)
 
     # ---------- threshold cycles ----------
@@ -177,60 +177,62 @@ class Engine:
         return stopped
 
     # ---------- reports ----------
+    def _table(self, now):
+        return M.prices_table(list(self.products.values()), self.states(), self.fx(now), self.tz,
+                              self.cfg.threshold_egp)
+
     def prices_text(self, now: int) -> str:
         head = M.PAUSE_BANNER if self.paused else ""
-        return head + "💰 <b>الأسعار الحالية</b>\n" + M.prices_table(
-            list(self.products.values()), self.states(), self.fx(now), self.tz) + f"\nوقت التقرير: {M.when(now, self.tz)}"
+        return f"{head}💰 <b>الأسعار الحالية</b>\n{self._table(now)}\n🕒 {M.when(now, self.tz)}"
 
     def status_text(self, now: int) -> str:
-        sts = self.states()
-        fx = self.fx(now)
-        out = ["🖥 <b>حالة النظام</b>",
-               "المراقبة: " + ("⏸ متوقفة مؤقتًا" if self.paused else "▶️ تعمل"),
-               f"الفحص كل {self.cfg.check_interval // 60} دقيقة | تذكير كل {self.cfg.reminder_interval // 60} دقيقة", "",
-               M.prices_table(list(self.products.values()), sts, fx, self.tz), ""]
         cycles = self.db.q("SELECT * FROM alert_cycles WHERE ended_ts IS NULL")
         below = [self.products[c["product_id"]].name for c in cycles]
         active = [self.products[c["product_id"]].name for c in cycles if c["clicked_ts"] is None]
-        out.append(f"أقل من {self.cfg.threshold_egp:f} جنيه: " + ("، ".join(below) or "لا يوجد"))
-        out.append("تذكيرات نشطة: " + ("، ".join(active) or "لا يوجد"))
+        state = "⏸ متوقفة مؤقتًا" if self.paused else "▶️ تعمل"
+        out = [f"🖥 <b>حالة النظام</b> — {state}",
+               f"فحص كل {self.cfg.check_interval // 60} د · تذكير كل {self.cfg.reminder_interval // 60} د", "",
+               self._table(now), "",
+               "📉 تحت الحد: " + ("، ".join(below) or "لا يوجد"),
+               "🔔 تذكيرات نشطة: " + ("، ".join(active) or "لا يوجد")]
         errs = self.db.q("SELECT ts,source,message FROM errors ORDER BY id DESC LIMIT 3")
-        out.append("آخر الأخطاء: " + ("" if errs else "لا يوجد"))
-        out += [f"  - {M.when(e['ts'], self.tz)} {e['source']}: {e['message']}" for e in errs]
+        if errs:
+            out.append("⚠️ آخر الأخطاء:")
+            out += [f"• {M.when(e['ts'], self.tz, True)} {e['source']}: {e['message']}" for e in errs]
+        else:
+            out.append("⚠️ آخر الأخطاء: لا يوجد")
         return "\n".join(out)
 
     def daily_report_text(self, now: int) -> str:
-        tz = ZoneInfo(self.tz)
-        dt = datetime.fromtimestamp(now, tz)
+        dt = datetime.fromtimestamp(now, ZoneInfo(self.tz))
         start = int(dt.replace(hour=0, minute=0, second=0, microsecond=0).timestamp())
-        fx = self.fx(now)
-        sts = self.states()
-        out = [M.PAUSE_BANNER.strip()] if self.paused else []
-        out += [f"🗓 <b>التقرير اليومي — {dt:%Y-%m-%d}</b>", ""]
+        fx, sts = self.fx(now), self.states()
+        rows, notes = [], []
         for p in self.products.values():
-            out.append(M.price_line(p, sts.get(p.id), fx, self.tz))
-            rows = self.db.q("SELECT price FROM checks WHERE product_id=? AND ts>=? AND ok=1", (p.id, start))
+            st = sts.get(p.id)
+            mark, price, egp, _ = M._row_state(p, st, fx, self.cfg.threshold_egp)
+            vals = [Decimal(r["price"]) for r in self.db.q(
+                "SELECT price FROM checks WHERE product_id=? AND ts>=? AND ok=1", (p.id, start))]
             fails = self.db.one("SELECT COUNT(*) c FROM checks WHERE product_id=? AND ts>=? AND ok=0", (p.id, start))["c"]
-            changes = self.db.one("SELECT COUNT(*) c FROM price_changes WHERE product_id=? AND ts>=?",
-                                  (p.id, start))["c"]
-            cur = p.currency
-            if rows:
-                vals = [Decimal(r["price"]) for r in rows]
-                out.append(f"   أقل سعر اليوم: {M.fmt_amount(min(vals), cur)} | أعلى: {M.fmt_amount(max(vals), cur)}"
-                           f" | عدد القراءات: {len(vals)}")
-            else:
-                out.append("   لا توجد قراءات ناجحة اليوم — لا تتوفر بيانات كافية")
-            out.append(f"   مرات تغيّر السعر: {changes} | مرات فشل الفحص: {fails}")
-        cycles = self.db.q("SELECT * FROM alert_cycles WHERE ended_ts IS NULL")
+            changes = self.db.one("SELECT COUNT(*) c FROM price_changes WHERE product_id=? AND ts>=?", (p.id, start))["c"]
+            lo, hi = (f"{min(vals):g}", f"{max(vals):g}") if vals else ("—", "—")
+            if not vals:
+                notes.append(f"• {p.name}: لا توجد بيانات كافية اليوم")
+            rows.append([p.name, price, egp, lo, hi, changes, fails, mark])
+        out = [M.PAUSE_BANNER.strip()] if self.paused else []
+        out += [f"🗓 <b>التقرير اليومي</b> — {dt:%Y-%m-%d}", M.daily_table(rows),
+                f"Min/Max = أقل/أعلى اليوم · Chg = مرات التغيّر · Fail = فشل الفحص\n"
+                f"🟢 أقل من {self.cfg.threshold_egp:f} جنيه · 🔴 فشل/لا بيانات\n{M.fx_footer(fx, self.tz)}"]
+        out += notes
         out.append("")
+        cycles = self.db.q("SELECT * FROM alert_cycles WHERE ended_ts IS NULL")
         if cycles:
-            out.append("<b>التنبيهات النشطة:</b>")
+            out.append("🔔 <b>التنبيهات النشطة:</b>")
             for c in cycles:
-                state = "تم الضغط على الرابط (التذكير متوقف)" if c["clicked_ts"] else "التذكير مستمر"
-                out.append(f"• {self.products[c['product_id']].name}: {state}")
+                out.append(f"• {self.products[c['product_id']].name}: " +
+                           ("تم الضغط على الرابط — التذكير متوقف" if c["clicked_ts"] else "التذكير مستمر"))
         else:
-            out.append(f"التنبيهات النشطة: لا يوجد (لا سعر أقل من {self.cfg.threshold_egp:f} جنيه)")
-        out.append(M.fx_footer(fx, self.tz))
+            out.append(f"🔔 التنبيهات النشطة: لا يوجد (لا سعر أقل من {self.cfg.threshold_egp:f} جنيه)")
         return "\n".join(out)
 
     def send_daily_if_due(self, now: int) -> bool:

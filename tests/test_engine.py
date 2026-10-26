@@ -15,7 +15,7 @@ M = 60
 def test_199_triggers_alert(env):
     feed(env, "maads", 199)
     a = msgs(env, "alert")
-    assert len(a) == 1 and "199 EGP" in a[0]["text"] and "أقل من 200 EGP" in a[0]["text"]
+    assert len(a) == 1 and "199 EGP" in a[0]["text"] and "أقل من 200 جنيه" in a[0]["text"]
     assert "https://trk.test/track/maads?c=" in a[0]["text"]
 
 
@@ -61,7 +61,7 @@ def test_failure_creates_no_price_no_alert_no_change(env):
 def test_failure_before_any_price_stores_nothing(env):
     env.record_failure("maads", FetchError("network", "x"), T0)
     assert env.state("maads")["price"] is None
-    assert "غير متاح" in env.prices_text(T0)
+    assert "—" in env.prices_text(T0) and "🔴" in env.prices_text(T0)
 
 
 def test_wrong_currency_is_rejected_as_review(env):
@@ -88,7 +88,7 @@ def test_change_produces_exactly_one_report(env):
     ch = msgs(env, "change")
     assert len(ch) == 1
     t = ch[0]["text"]
-    assert "250 EGP" in t and "240 EGP" in t and "انخفاض 10 EGP" in t and "-4.00%" in t and "آخر الأسعار" in t
+    assert "250 EGP" in t and "240 EGP" in t and "-10.00 EGP" in t and "-4.00%" in t and "Site" in t
 
 
 def test_no_change_no_report(env):
@@ -107,7 +107,7 @@ def test_return_to_previous_price_is_a_normal_change(env):
     feed(env, "maads", 240, now=T0 + 1)
     feed(env, "maads", 250, now=T0 + 2)
     assert len(msgs(env, "change")) == 2
-    assert "ارتفاع" in msgs(env, "change")[1]["text"]
+    assert "🔺" in msgs(env, "change")[1]["text"] and "+10.00 EGP" in msgs(env, "change")[1]["text"]
 
 
 def test_change_needs_confirmation_when_configured(cfg, tmp_path):
@@ -136,8 +136,7 @@ def test_z2u_report_shows_usd_and_egp(env):
     feed(env, "z2u", "6.00", now=T0 + 1)
     t = msgs(env, "change")[0]["text"]
     assert "7.00 USD" in t and "6.00 USD" in t
-    assert "300 EGP" in t and "المقابل التقريبي بالجنيه" in t and "1 USD = 50.0000 EGP" in t
-    assert "test-fx" in t
+    assert "350" in t and "300" in t and "1 USD = 50.00" in t
 
 
 def test_z2u_report_without_fx_says_unavailable(env):
@@ -145,7 +144,7 @@ def test_z2u_report_without_fx_says_unavailable(env):
     feed(env, "z2u", "7.00")
     feed(env, "z2u", "6.00", now=T0 + 1)
     t = msgs(env, "change")[0]["text"]
-    assert "6.00 USD" in t and "غير متاح" in t and "EGP" not in t.split("آخر الأسعار")[0]
+    assert "6.00 USD" in t and "n/a" in t and "غير متاح" in t
 
 
 def test_maads_and_driffle_reports_in_egp(env):
@@ -154,7 +153,7 @@ def test_maads_and_driffle_reports_in_egp(env):
     feed(env, "maads", 240, now=T0 + 1)
     feed(env, "driffle", 270, now=T0 + 1)
     for m in msgs(env, "change"):
-        assert "EGP" in m["text"] and "USD" not in m["text"].split("آخر الأسعار")[0]
+        assert "EGP" in m["text"] and "USD" not in m["text"].split("Site")[0]
 
 
 # --- cycles, reminders, clicks (8-12) ---
@@ -267,7 +266,7 @@ def test_restart_does_not_repeat_old_messages(cfg, tmp_path):
     e2.send_daily_if_due(T0)  # (no-op: before daily time in Cairo? just ensure no crash)
     e2.outbox.flush(lambda t, b: sent.append(t))
     assert len([s for s in sent if "فرصة سعرية" in s]) == 1
-    assert len([s for s in sent if "تقرير تغيّر" in s]) == 1
+    assert len([s for s in sent if "تغيّر سعر" in s]) == 1
 
 
 def test_enqueue_same_key_twice_is_one_message(env):
@@ -304,9 +303,9 @@ def test_daily_report_sent_without_changes_once_per_day(env):
     assert env.send_daily_if_due(t + 60) is False                # no duplicate same day
     txt = msgs(env, "daily")[0]["text"]
     assert "التقرير اليومي" in txt and "2026-03-03" in txt
-    assert "250 EGP" in txt and "أقل سعر اليوم" in txt and "7.00 USD" in txt and "350 EGP" in txt
-    assert "مرات فشل الفحص: 1" in txt and "مرات تغيّر السعر: 0" in txt
-    assert "لا توجد قراءات ناجحة اليوم" in txt                    # driffle: explicit lack of data
+    assert "250 EGP" in txt and "Min" in txt and "7.00 USD" in txt and "350" in txt
+    assert "Driffle" in txt and "—" in txt and "Fail" in txt
+    assert "لا توجد بيانات كافية اليوم" in txt                    # driffle: explicit lack of data
     assert "التنبيهات النشطة: لا يوجد" in txt
     assert env.send_daily_if_due(t + 24 * 3600) is True          # next day
 
@@ -315,7 +314,7 @@ def test_status_text_lists_alerts_errors_and_state(env):
     feed(env, "maads", 199)
     env.record_failure("driffle", FetchError("blocked", "HTTP 403"), T0 + 5)
     t = env.status_text(T0 + 10)
-    assert "تعمل" in t and "MAADS" in t and "199 EGP" in t and "تذكيرات نشطة: MAADS" in t
+    assert "تعمل" in t and "MAADS" in t and "199 EGP" in t and "تذكيرات نشطة: MAADS" in t and "🟢" in t
     assert "HTTP 403" in t
     env.set_paused(True, T0 + 11)
     assert "متوقفة" in env.status_text(T0 + 12)
