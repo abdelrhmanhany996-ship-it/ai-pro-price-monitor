@@ -1,0 +1,8 @@
+# استبدل track.example.com بنطاقك (يجب أن يشير سجل A إلى IP الخادم)
+track.example.com {
+    @allowed path /track/* /health
+    handle @allowed {
+        reverse_proxy 127.0.0.1:8080
+    }
+    respond 404
+}

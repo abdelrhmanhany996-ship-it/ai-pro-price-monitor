@@ -1,0 +1,7 @@
+[Unit]
+Description=Backup aipro database
+[Service]
+Type=oneshot
+User=aipro
+Environment=DB_PATH=/opt/aipro/data/aipro.db BACKUP_DIR=/opt/aipro/backups
+ExecStart=/opt/aipro/deploy/backup.sh

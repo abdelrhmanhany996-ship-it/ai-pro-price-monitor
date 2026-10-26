@@ -1,0 +1,14 @@
+.env
+.env.*
+!.env.example
+data/*
+!data/.gitkeep
+backups/
+*.db
+*.db-wal
+*.db-shm
+*.lock
+__pycache__/
+.pytest_cache/
+.venv/
+*.log

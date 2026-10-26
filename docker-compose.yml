@@ -1,0 +1,22 @@
+services:
+  aipro:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DB_PATH: /app/data/aipro.db
+      WEB_HOST: 0.0.0.0
+    volumes:
+      - ./data:/app/data
+    ports:
+      - "127.0.0.1:8080:8080"     # reverse proxy (Caddy) forwards HTTPS here
+  caddy:                          # optional: automatic HTTPS for the tracking domain
+    image: caddy:2
+    restart: unless-stopped
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+    network_mode: host
+volumes:
+  caddy_data:
