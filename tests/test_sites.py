@@ -76,3 +76,33 @@ def test_driffle_mixed_currencies_not_guessed():
            '<script type="application/ld+json">{"@type":"Product","offers":{"priceCurrency":"USD","price":7}}</script>')
     with pytest.raises(FetchError):
         driffle.parse(mix)
+
+
+def test_maads_falls_back_to_other_host_on_network_error(monkeypatch):
+    calls = []
+
+    def fake(url, *a, **k):
+        calls.append(url)
+        if len(calls) == 1:
+            raise FetchError("network", "URLError: x")
+        return ld(199)
+    monkeypatch.setattr(maads, "http_get", fake)
+    assert str(maads.fetch().price) == "199" and calls == [maads.URL, maads.FALLBACK_URL]
+
+
+def test_http_get_retries_transient_errors(monkeypatch):
+    from aipro import fetchers
+    n = {"c": 0}
+
+    def flaky(url, timeout):
+        n["c"] += 1
+        if n["c"] < 3:
+            raise FetchError("network", "URLError")
+        return "ok"
+    monkeypatch.setattr(fetchers, "_get", flaky)
+    monkeypatch.setattr(fetchers.time, "sleep", lambda s: None)
+    assert fetchers.http_get("u") == "ok" and n["c"] == 3
+    n["c"] = -10                                       # blocked errors are not retried
+    monkeypatch.setattr(fetchers, "_get", lambda u, t: (_ for _ in ()).throw(FetchError("blocked", "403")))
+    with pytest.raises(FetchError):
+        fetchers.http_get("u")

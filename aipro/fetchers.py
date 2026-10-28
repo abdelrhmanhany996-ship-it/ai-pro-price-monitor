@@ -1,5 +1,6 @@
 """Shared fetch types and the HTTP client (honest User-Agent, no protection bypass)."""
 import gzip
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -24,7 +25,18 @@ class PriceResult:
     note: str = ""
 
 
-def http_get(url: str, timeout: int = 20) -> str:
+def http_get(url: str, timeout: int = 20, retries: int = 2) -> str:
+    """GET with a short retry on transient network errors (blocks/429/HTTP errors are not retried)."""
+    for attempt in range(retries + 1):
+        try:
+            return _get(url, timeout)
+        except FetchError as e:
+            if e.kind != "network" or attempt == retries:
+                raise
+            time.sleep(2 * (attempt + 1))
+
+
+def _get(url: str, timeout: int) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT, "Accept-Language": "en"})
     try:
         with urllib.request.urlopen(req, timeout=timeout) as r:
@@ -37,6 +49,8 @@ def http_get(url: str, timeout: int = 20) -> str:
         if e.code in (401, 403, 451):
             raise FetchError("blocked", f"HTTP {e.code} (الموقع يمنع الوصول الآلي)") from None
         raise FetchError("network", f"HTTP {e.code}") from None
+    except urllib.error.URLError as e:
+        raise FetchError("network", f"URLError: {str(e.reason)[:80]}") from None
     except Exception as e:
         raise FetchError("network", type(e).__name__) from None
     return raw.decode("utf-8", "replace")
