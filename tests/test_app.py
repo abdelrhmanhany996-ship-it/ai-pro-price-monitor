@@ -66,7 +66,7 @@ def test_unauthorized_update_gets_no_reply_and_no_state_change(cfg, tmp_path):
     cfg = dataclasses.replace(cfg, db_path=str(tmp_path / "u.db"))
     a = appmod.App(cfg)
     sent = []
-    a.tg.send = lambda text, buttons=None, chat_id=None: sent.append(text)
+    a.tg.send = lambda text, buttons=None, chat_id=None, keyboard=None: sent.append(text)
     a.handle_update({"update_id": 1, "message": {"chat": {"id": 999}, "text": "/pause"}})
     assert sent == [] and not a.engine.paused
     a.handle_update({"update_id": 2, "message": {"chat": {"id": 42}, "text": "/pause"}})
@@ -122,3 +122,32 @@ def test_telegram_error_does_not_leak_token(monkeypatch):
     with pytest.raises(TelegramError) as e:
         Telegram(tok, "1").send("hi")
     assert tok not in str(e.value)
+
+
+def test_button_labels_map_to_commands(env):
+    feed(env, "maads", 250)
+    assert bot.is_command_text("💰 الأسعار") and bot.is_command_text("/besttime") and not bot.is_command_text("hello")
+    assert "250 EGP" in bot.handle_command(env, "💰 الأسعار", T0)
+    assert "حالة النظام" in bot.handle_command(env, "🖥 الحالة", T0)
+    assert "أرخص وقت" in bot.handle_command(env, "⏰ أرخص وقت", T0)
+    assert "/besttime" in bot.HELP
+    assert all(len(r) <= 3 for r in bot.KEYBOARD) and {c for c, _ in bot.COMMANDS} >= {"prices", "besttime"}
+
+
+def test_keyboard_and_commands_are_sent_to_telegram(cfg, tmp_path):
+    from test_telegram_http import CALLS, Fake, UPDATES  # fake Telegram API
+    from http.server import HTTPServer
+    CALLS.clear()
+    srv = HTTPServer(("127.0.0.1", 0), Fake)
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    from aipro.telegram import Telegram
+    tg = Telegram("123:fake", "42", base=f"http://127.0.0.1:{srv.server_address[1]}")
+    try:
+        tg.set_commands(bot.COMMANDS)
+        tg.send("hi", keyboard=bot.KEYBOARD)
+        sm = [b for m, b in CALLS if m == "setMyCommands"][0]["commands"]
+        assert {"command": "besttime", "description": "⏰ أرخص وقت في اليوم"} in sm
+        kb = [b for m, b in CALLS if m == "sendMessage"][0]["reply_markup"]
+        assert kb["is_persistent"] and kb["keyboard"][0][0] == {"text": "💰 الأسعار"}
+    finally:
+        srv.shutdown()

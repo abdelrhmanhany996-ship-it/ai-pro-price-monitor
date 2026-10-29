@@ -125,11 +125,11 @@ class App:
         if not bot.is_authorized(m.get("chat", {}).get("id"), self.cfg.chat_id):
             log.warning("ignored message from unauthorized chat")
             return
-        if not str(m.get("text", "")).startswith("/"):
+        if not bot.is_command_text(str(m.get("text", ""))):
             return
         reply = bot.handle_command(self.engine, m["text"], now, on_resume=self.kick_all)
         if reply:
-            self.tg.send(reply)
+            self.tg.send(reply, keyboard=bot.KEYBOARD)
 
     def kick_all(self) -> None:
         for e in self.kick.values():
@@ -143,6 +143,10 @@ class App:
         threads += [threading.Thread(target=self.product_loop, args=(pid,), name=f"chk-{pid}", daemon=True)
                     for pid in PRODUCTS]
         if self.tg:
+            try:
+                self.tg.set_commands(bot.COMMANDS)          # the "/" menu with descriptions
+            except Exception as e:
+                log.warning("setMyCommands failed: %s", e)
             threads.append(threading.Thread(target=self.poll_loop, name="tg", daemon=True))
         else:
             log.warning("Telegram غير مفعّل: TELEGRAM_BOT_TOKEN/TELEGRAM_CHAT_ID غير مضبوطين — الرسائل تُحفظ فقط")

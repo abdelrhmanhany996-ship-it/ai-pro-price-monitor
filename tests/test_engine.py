@@ -334,3 +334,28 @@ def test_each_reminder_is_followed_by_a_prices_table(env):
     assert kinds[-2:] == ["reminder", "reminder-table"]
     assert "Site" in rows[-1]["text"] and "MAADS" in rows[-1]["text"] and "199 EGP" in rows[-1]["text"]
     assert env.due_reminders(T0 + 10 * M) == 0 and len(msgs(env, "reminder-table")) == 1
+
+
+def _fill(env, pid, hours_prices, days=3):
+    """Insert fake readings: price depends on hour of day (Cairo)."""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    tz = ZoneInfo("Africa/Cairo")
+    for d in range(1, days + 1):
+        for h, price in hours_prices.items():
+            for k in range(3):
+                t = int(datetime(2026, 3, d, h, k * 10, tzinfo=tz).timestamp())
+                env.db.x("INSERT INTO checks(product_id,ts,ok,price,currency) VALUES(?,?,1,?,?)",
+                         (pid, t, str(price), env.products[pid].currency))
+
+
+def test_best_time_report_finds_cheapest_and_dearest_hour(env):
+    _fill(env, "maads", {3: 190, 9: 220, 15: 240})
+    t = env.best_times_text(T0)
+    assert "03:00 190.00" in t and "15:00 240.00" in t and "21%" in t      # (240-190)/240
+    assert "Z2U: بيانات غير كافية" in t and "Driffle: بيانات غير كافية" in t   # no invented numbers
+
+
+def test_best_time_needs_enough_data(env):
+    feed(env, "maads", 200)
+    assert "بيانات غير كافية" in env.best_times_text(T0)

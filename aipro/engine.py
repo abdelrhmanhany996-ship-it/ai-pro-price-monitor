@@ -13,6 +13,8 @@ from .fetchers import FetchError, PriceResult
 from .outbox import Outbox
 
 log = logging.getLogger("aipro.engine")
+MIN_HOUR_SAMPLES = 3
+MIN_TOTAL_SAMPLES = 24
 
 
 class Engine:
@@ -237,6 +239,34 @@ class Engine:
         else:
             out.append(f"🔔 التنبيهات النشطة: لا يوجد (لا سعر أقل من {self.cfg.threshold_egp:f} جنيه)")
         return "\n".join(out)
+
+    def best_times_text(self, now: int) -> str:
+        """Average price per hour of day (local time) from stored checks: cheapest vs dearest hour."""
+        tz = ZoneInfo(self.tz)
+        rows, notes = [], []
+        for p in self.products.values():
+            buckets, days, total = {}, set(), 0
+            for r in self.db.q("SELECT ts,price FROM checks WHERE product_id=? AND ok=1", (p.id,)):
+                dt = datetime.fromtimestamp(r["ts"], tz)
+                buckets.setdefault(dt.hour, []).append(Decimal(r["price"]))
+                days.add(dt.date())
+                total += 1
+            ok = {h: sum(v) / len(v) for h, v in buckets.items() if len(v) >= MIN_HOUR_SAMPLES}
+            if total < MIN_TOTAL_SAMPLES or len(days) < 2 or len(ok) < 2:
+                rows.append([p.name, "—", "—", "—"])
+                notes.append(f"• {p.name}: بيانات غير كافية بعد ({total} قراءة / {len(days)} يوم)")
+                continue
+            lo_h, hi_h = min(ok, key=ok.get), max(ok, key=ok.get)
+            if ok[lo_h] == ok[hi_h]:
+                rows.append([p.name, "flat", "flat", f"{len(days)}d"])
+                notes.append(f"• {p.name}: السعر ثابت تقريبًا على مدار اليوم")
+                continue
+            gap = (ok[hi_h] - ok[lo_h]) / ok[hi_h] * 100
+            rows.append([p.name, f"{lo_h:02d}:00 {ok[lo_h]:.2f}", f"{hi_h:02d}:00 {ok[hi_h]:.2f}", f"{gap:.0f}%"])
+        table = M._table(["Site", "Cheapest", "Dearest", "Gap"], rows)
+        out = ["⏰ <b>أرخص وقت في اليوم</b> (متوسط السعر لكل ساعة)", table,
+               "Cheapest = أرخص ساعة · Dearest = أغلى ساعة · Gap = الفرق بينهما"]
+        return "\n".join(out + notes)
 
     def send_daily_if_due(self, now: int) -> bool:
         dt = datetime.fromtimestamp(now, ZoneInfo(self.tz))

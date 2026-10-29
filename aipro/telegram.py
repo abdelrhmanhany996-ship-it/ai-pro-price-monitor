@@ -34,12 +34,19 @@ class Telegram:
             raise TelegramError(f"{method}: {data.get('description')}")
         return data["result"]
 
-    def send(self, text: str, buttons=None, chat_id: str | None = None) -> None:
+    def send(self, text: str, buttons=None, chat_id: str | None = None, keyboard=None) -> None:
         p = {"chat_id": chat_id or self.chat_id, "text": text[:4096], "parse_mode": "HTML",
              "disable_web_page_preview": True}
         if buttons:
             p["reply_markup"] = {"inline_keyboard": buttons}
+        elif keyboard:
+            p["reply_markup"] = {"keyboard": [[{"text": t} for t in row] for row in keyboard],
+                                 "resize_keyboard": True, "is_persistent": True,
+                                 "input_field_placeholder": "اختر أمرًا أو اكتب /help"}
         self.call("sendMessage", p)
+
+    def set_commands(self, commands) -> None:
+        self.call("setMyCommands", {"commands": [{"command": c, "description": d} for c, d in commands]})
 
     def get_me(self) -> dict:
         return self.call("getMe", {})
