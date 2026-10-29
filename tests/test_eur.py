@@ -59,3 +59,9 @@ def test_any_currency_product_switching_currency_is_baseline_not_change(cfg, tmp
 def test_driffle_eur_price_shown_with_egp_equivalent(eng):
     feed(eng, "driffle", "6.03")
     assert "6.03 EUR" in eng.prices_text(T0) and "332" in eng.prices_text(T0)   # 6.03*55
+
+
+def test_note_is_stored_and_shown_under_the_table(eng):
+    from aipro.fetchers import PriceResult
+    eng.record_success("driffle", PriceResult(Decimal("6.03"), "EUR", "base", "أرخص عرض"), T0)
+    assert "ℹ️ Driffle: أرخص عرض" in eng.prices_text(T0)

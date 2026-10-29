@@ -86,7 +86,7 @@ class Engine:
             was_outage = st["outage_id"]
             alerted_outage = st["consecutive_failures"] >= self.cfg.error_alert_after
             self.db.x("UPDATE product_state SET consecutive_failures=0,outage_id=NULL,status='ok',"
-                      "last_error=NULL,last_ok_ts=? WHERE product_id=?", (now, pid))
+                      "last_error=NULL,last_ok_ts=?,note=? WHERE product_id=?", (now, res.note or None, pid))
             old = Decimal(st["price"]) if st["price"] is not None else None
             if old is None or st["currency"] != res.currency:   # first reading / currency switch = baseline
                 self._accept(pid, price, res.currency, now)

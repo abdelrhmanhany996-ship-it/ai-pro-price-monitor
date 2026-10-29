@@ -136,3 +136,30 @@ def test_driffle_zero_price_product_page_falls_back_to_store(monkeypatch):
     monkeypatch.setattr(driffle, "http_get", lambda url, *a, **k: zero if "p9998937" in url else store)
     r = driffle.fetch()
     assert (str(r.price), r.currency) == ("7.77", "EUR")
+
+
+def _card(title, price, offers="3 Offers"):
+    return ('<a class="productCardStyle-3 labelTopShow " href="https://www.z2u.com/product-1/x.html" >'
+            f'<span class="title">{title}</span><span class="numberTxt">{offers}</span>'
+            f'<span class="priceTxt">{price}</span></a>')
+
+
+def test_z2u_category_takes_cheapest_card_and_names_type():
+    html = (_card("Google AI Gemini Pro 18 Months Private Account", "$8.88") +
+            _card("Google AI Gemini Pro 18 Months Family Member Account", "$7.77") +
+            _card("Google AI Gemini Pro 18 Months Family Manager Account", "$9.99"))
+    r = z2u.parse_category(html)
+    assert (str(r.price), r.currency) == ("7.77", "USD") and "Family Member Account" in r.note
+
+
+def test_z2u_category_ignores_unreadable_or_non_usd_cards_and_never_guesses():
+    assert str(z2u.parse_category(_card("A", "€5.00") + _card("B", "$6.50") + _card("C", "n/a")).price) == "6.50"
+    for html in ("<html></html>", _card("A", "€5.00")):
+        with pytest.raises(FetchError):
+            z2u.parse_category(html)
+
+
+def test_z2u_fetch_falls_back_to_product_page(monkeypatch):
+    page = z2u_html("7.77", "7.77")
+    monkeypatch.setattr(z2u, "http_get", lambda url, *a, **k: "<html></html>" if "gemini/accounts" in url else page)
+    assert str(z2u.fetch().price) == "7.77"

@@ -67,7 +67,10 @@ def prices_table(products, states, fx, tz: str, threshold: Decimal = Decimal("20
         problems |= mark == "🔴"
     out = _table(["Site", "Price", "EGP", "Updated"], rows, marks)
     legend = f"🟢 أقل من {threshold:f} جنيه · ⚪ عادي" + (" · 🔴 فشل الفحص/لا بيانات (آخر سعر معروف)" if problems else "")
-    return f"{out}\n{legend}\n{fx_footer(fx, tz)}"
+    notes = [f"{p.name}: {states[p.id]['note']}" for p in products
+             if states.get(p.id) is not None and states[p.id]["price"] is not None and states[p.id]["note"]]
+    note_line = ("ℹ️ " + " · ".join(notes) + "\n") if notes else ""
+    return f"{out}\n{legend}\n{note_line}{fx_footer(fx, tz)}"
 
 
 def change_report(product, old, new, cur, fx, ts, products, states, tz, threshold=Decimal("200")) -> str:

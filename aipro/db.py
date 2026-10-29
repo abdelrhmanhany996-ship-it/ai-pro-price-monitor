@@ -46,6 +46,10 @@ class DB:
                 self.conn.execute("PRAGMA journal_mode=WAL")
             self.conn.execute("PRAGMA busy_timeout=5000")
             self.conn.executescript(SCHEMA)
+            try:                                   # migration: per-product note (e.g. account type)
+                self.conn.execute("ALTER TABLE product_state ADD COLUMN note TEXT")
+            except sqlite3.OperationalError:
+                pass
 
     def q(self, sql, args=()):
         with self.lock:
