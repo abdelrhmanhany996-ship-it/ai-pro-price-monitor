@@ -106,3 +106,33 @@ def test_http_get_retries_transient_errors(monkeypatch):
     monkeypatch.setattr(fetchers, "_get", lambda u, t: (_ for _ in ()).throw(FetchError("blocked", "403")))
     with pytest.raises(FetchError):
         fetchers.http_get("u")
+
+
+def _next(products, cur="EUR"):
+    import json
+    return ('<script id="__NEXT_DATA__" type="application/json">' +
+            json.dumps({"props": {"pageProps": {"currency": cur, "items": products}}}) + "</script>")
+
+
+def test_driffle_store_picks_cheapest_matching_listing():
+    html = _next([{"title": "Google AI Pro - Gemini 18 Months (Global) - Activation Link", "price": 9.5},
+                  {"title": "Google AI Pro - Gemini 18 Months (Global) - Activation Link", "price": 8.25},
+                  {"title": "Google AI Pro - Gemini 3 Months", "price": 1.1}, {"title": "Other game", "price": 0.5}])
+    r = driffle.parse_store(html)
+    assert (str(r.price), r.currency) == ("8.25", "EUR")
+
+
+def test_driffle_store_no_match_or_unknown_currency_not_guessed():
+    with pytest.raises(FetchError):
+        driffle.parse_store(_next([{"title": "Other", "price": 3}]))
+    with pytest.raises(FetchError) as e:
+        driffle.parse_store(_next([{"title": "Google AI Pro 18 Months", "price": 3}], cur="BRL"))
+    assert e.value.kind == "currency"
+
+
+def test_driffle_zero_price_product_page_falls_back_to_store(monkeypatch):
+    zero = ld(0, "EUR")
+    store = _next([{"title": "Google AI Pro - Gemini 18 Months", "price": 7.77}])
+    monkeypatch.setattr(driffle, "http_get", lambda url, *a, **k: zero if "p9998937" in url else store)
+    r = driffle.fetch()
+    assert (str(r.price), r.currency) == ("7.77", "EUR")
