@@ -359,3 +359,12 @@ def test_best_time_report_finds_cheapest_and_dearest_hour(env):
 def test_best_time_needs_enough_data(env):
     feed(env, "maads", 200)
     assert "بيانات غير كافية" in env.best_times_text(T0)
+
+
+def test_daily_report_is_followed_by_cheapest_time_message(env):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    t = int(datetime(2026, 3, 3, 21, 5, tzinfo=ZoneInfo("Africa/Cairo")).timestamp())
+    feed(env, "maads", 250, now=t - 600)
+    assert env.send_daily_if_due(t) is True and env.send_daily_if_due(t + 5) is False
+    assert [m["kind"] for m in msgs(env)][-2:] == ["daily", "daily-best"]

@@ -273,4 +273,7 @@ class Engine:
         h, m = map(int, self.cfg.daily_time.split(":"))
         if (dt.hour, dt.minute) < (h, m):
             return False
-        return self.outbox.enqueue(f"daily:{dt:%Y-%m-%d}", "daily", self.daily_report_text(now), now=now)
+        sent = self.outbox.enqueue(f"daily:{dt:%Y-%m-%d}", "daily", self.daily_report_text(now), now=now)
+        if sent:        # companion message: cheapest hours of the day
+            self.outbox.enqueue(f"daily-best:{dt:%Y-%m-%d}", "daily-best", self.best_times_text(now), now=now)
+        return sent
